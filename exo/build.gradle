@@ -42,3 +42,14 @@ repositories {
         name 'Google'
     }
 }
+
+// ============================@Publish@============================
+ext {
+    k_name = 'exo'
+    k_desc = 'The KMedia framwork media player extension module.'
+    k_version = ''
+    k_version_desc = ''
+    k_vcs_url = 'https://github.com/jcodeing/KMedia-Mpe.git'
+    k_web_site_url = 'https://github.com/jcodeing/KMedia-Mpe'
+}
+apply from: '../../publish.gradle'
