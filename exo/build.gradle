@@ -48,8 +48,6 @@ ext {
     k_name = 'kmedia-exo'
     k_desc = 'The KMedia framwork media player extension module.'
     k_version = 'r1.0.10'
-    k_version_desc = 'KMedia Exo Release 1.0.10'
-    k_vcs_url = 'https://github.com/jcodeing/KMedia-Mpe.git'
     k_web_site_url = 'https://github.com/jcodeing/KMedia-Mpe'
 }
 apply from: '../../publish.gradle'
