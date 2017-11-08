@@ -173,6 +173,7 @@ public class ExoMediaPlayer extends AMediaPlayer {
 
   @Override
   public void reset() {
+    super.reset();
     internalPlayer.stop();
     L.dd(TAG, "reset()-$>stop()");
   }
@@ -293,14 +294,17 @@ public class ExoMediaPlayer extends AMediaPlayer {
 
   @Override
   public boolean isPlayable() {
-    int state = internalPlayer.getPlaybackState();
-    switch (state) {
-      case ExoPlayer.STATE_IDLE:
-      case ExoPlayer.STATE_BUFFERING:
-        return false;
-      default:
-        return true;
+    if (super.isPlayable()) {
+      int state = internalPlayer.getPlaybackState();
+      switch (state) {
+        case ExoPlayer.STATE_IDLE:
+        case ExoPlayer.STATE_BUFFERING:
+          return false;
+        default:
+          return true;
+      }
     }
+    return false;
   }
 
   @Override
