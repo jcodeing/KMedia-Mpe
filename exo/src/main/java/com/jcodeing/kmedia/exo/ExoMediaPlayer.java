@@ -21,15 +21,16 @@ import android.os.Handler;
 import android.text.TextUtils;
 import android.view.Surface;
 import android.view.SurfaceHolder;
-
 import android.view.SurfaceView;
 import android.view.TextureView;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.DefaultLoadControl;
+import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.ExoPlaybackException;
-import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.ExoPlayerFactory;
 import com.google.android.exoplayer2.PlaybackParameters;
+import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.RenderersFactory;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
@@ -43,13 +44,13 @@ import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource
 import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
 import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
+import com.google.android.exoplayer2.trackselection.MappingTrackSelector;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.upstream.DefaultBandwidthMeter;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.util.Util;
 import com.jcodeing.kmedia.AMediaPlayer;
-
 import com.jcodeing.kmedia.utils.L;
 import java.io.IOException;
 import java.util.Map;
@@ -63,6 +64,7 @@ public class ExoMediaPlayer extends AMediaPlayer {
   private EventLogger eventLogger;
   private PlayerListener playerListener;
   private final SimpleExoPlayer internalPlayer;
+  private DefaultTrackSelector trackSelector;
 
   public ExoMediaPlayer(Context context) {
     this.context = context.getApplicationContext();
@@ -72,21 +74,48 @@ public class ExoMediaPlayer extends AMediaPlayer {
     // =========@Player
     TrackSelection.Factory trackSelectionFactory =
         new AdaptiveTrackSelection.Factory(bandwidthMeter);
-    DefaultTrackSelector trackSelector = new DefaultTrackSelector(trackSelectionFactory);
+    trackSelector = new DefaultTrackSelector(trackSelectionFactory);
     eventLogger = new EventLogger(trackSelector);
     playerListener = new PlayerListener();
-    internalPlayer = ExoPlayerFactory
-        .newSimpleInstance(this.context, trackSelector, new DefaultLoadControl(),
-            null);
+    RenderersFactory rf = new DefaultRenderersFactory(context, null);
+    internalPlayer = ExoPlayerFactory.newSimpleInstance(
+        rf, trackSelector, new DefaultLoadControl());
     internalPlayer.addListener(eventLogger);
     internalPlayer.addListener(playerListener);
-    internalPlayer.setVideoListener(playerListener);
+    internalPlayer.addVideoListener(playerListener);
     internalPlayer.setPlayWhenReady(false);
 
     // =========@Source
     mainHandler = new Handler();
     userAgent = Util.getUserAgent(this.context, "ExoMediaPlayer");
     mediaDataSourceFactory = new DefaultDataSourceFactory(this.context, userAgent, bandwidthMeter);
+  }
+
+  /**
+   * Sets whether the renderer at the specified type is disabled.
+   * Disabling a renderer prevents the selector from selecting any tracks for it.
+   *
+   * @param rendererType {@link C#TRACK_TYPE_AUDIO}, {@link C#TRACK_TYPE_VIDEO} ...
+   * @param disabled Whether the renderer is disabled.
+   */
+  public void setRendererDisabled(int rendererType, boolean disabled) {
+    if (trackSelector == null) {
+      return;
+    }
+    MappingTrackSelector.MappedTrackInfo mappedTrackInfo =
+        trackSelector.getCurrentMappedTrackInfo();
+    if (mappedTrackInfo != null) {
+      for (int i = 0; i < mappedTrackInfo.length; i++) {
+        TrackGroupArray trackGroups = mappedTrackInfo.getTrackGroups(i);
+        if (trackGroups.length != 0) {
+          int rt = internalPlayer.getRendererType(i);
+          if (rt == rendererType) {
+            trackSelector.setRendererDisabled(i, disabled);
+            break;
+          }
+        }
+      }
+    }
   }
 
   public SimpleExoPlayer internalPlayer() {
@@ -140,7 +169,7 @@ public class ExoMediaPlayer extends AMediaPlayer {
   // ============================@Control@============================
   @Override
   public boolean start() throws IllegalStateException {
-    if (internalPlayer.getPlaybackState() == ExoPlayer.STATE_ENDED) {
+    if (internalPlayer.getPlaybackState() == Player.STATE_ENDED) {
       seekTo(0);
       L.dd(TAG, "start()-$>seekTo(0)");//"-$>" internal actual call method
     } else {
@@ -297,8 +326,8 @@ public class ExoMediaPlayer extends AMediaPlayer {
     if (super.isPlayable()) {
       int state = internalPlayer.getPlaybackState();
       switch (state) {
-        case ExoPlayer.STATE_IDLE:
-        case ExoPlayer.STATE_BUFFERING:
+        case Player.STATE_IDLE:
+        case Player.STATE_BUFFERING:
           return false;
         default:
           return true;
@@ -309,12 +338,12 @@ public class ExoMediaPlayer extends AMediaPlayer {
 
   @Override
   public boolean isPlaying() {
-    return isPlayable() && internalPlayer.getPlaybackState() != ExoPlayer.STATE_ENDED
+    return isPlayable() && internalPlayer.getPlaybackState() != Player.STATE_ENDED
         && internalPlayer.getPlayWhenReady();
   }
 
   // ============================@Listener@============================
-  private class PlayerListener implements ExoPlayer.EventListener, SimpleExoPlayer.VideoListener {
+  private class PlayerListener implements Player.EventListener, SimpleExoPlayer.VideoListener {
 
     private boolean isPreparing = false;
     private boolean isSeekToing = false;
@@ -353,33 +382,33 @@ public class ExoMediaPlayer extends AMediaPlayer {
     public void onPlayerStateChanged(boolean playWhenReady, int playbackState) {
       setPlaybackState(playbackState);
 
-      if (isBuffering && (playbackState == ExoPlayer.STATE_READY
-          || playbackState == ExoPlayer.STATE_ENDED)) {
+      if (isBuffering && (playbackState == Player.STATE_READY
+          || playbackState == Player.STATE_ENDED)) {
         isBuffering = false;
         notifyOnInfo(MEDIA_INFO_BUFFERING_END, internalPlayer.getBufferedPercentage());
       }
 
-      if (isPreparing && playbackState == ExoPlayer.STATE_READY) {
+      if (isPreparing && playbackState == Player.STATE_READY) {
         isPreparing = false;
         notifyOnPrepared();
       }
 
-      if (isSeekToing && playbackState == ExoPlayer.STATE_READY) {
+      if (isSeekToing && playbackState == Player.STATE_READY) {
         isSeekToing = false;
         notifyOnSeekComplete();
       }
 
       switch (playbackState) {
-        case ExoPlayer.STATE_IDLE:
+        case Player.STATE_IDLE:
           break;
-        case ExoPlayer.STATE_BUFFERING:
+        case Player.STATE_BUFFERING:
           notifyOnInfo(MEDIA_INFO_BUFFERING_START, internalPlayer.getBufferedPercentage());
           isBuffering = true;
           break;
-        case ExoPlayer.STATE_READY:
+        case Player.STATE_READY:
           isCompletion = false;
           break;
-        case ExoPlayer.STATE_ENDED:
+        case Player.STATE_ENDED:
           if (!isCompletion) {
             isCompletion = true;
             if (isLooping()) {
